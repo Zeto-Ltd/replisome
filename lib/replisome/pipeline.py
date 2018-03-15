@@ -1,8 +1,3 @@
-import psycopg2
-
-from .errors import ReplisomeError
-from .version import check_version
-
 
 class Pipeline(object):
     """A chain of operations on a stream of changes"""
@@ -16,7 +11,7 @@ class Pipeline(object):
         self.consumer = None
         self.state = self.NOT_STARTED
 
-    def start(self, lsn=None):
+    def start(self, **kwargs):
         if self.state != self.NOT_STARTED:
             raise ValueError("can't start pipeline in state %s" % self.state)
 
@@ -26,12 +21,12 @@ class Pipeline(object):
         if not self.consumer:
             raise ValueError("can't start: no consumer")
 
-        self.verify_version()
+        self.receiver.verify()
         self.receiver.message_cb = self.process_message
         cnn = self.receiver.create_connection()
 
         self.state = self.RUNNING
-        self.receiver.start(cnn, lsn=lsn)
+        self.receiver.start(cnn, **kwargs)
 
     def stop(self):
         if self.state != self.RUNNING:
@@ -47,21 +42,3 @@ class Pipeline(object):
                 return
 
         self.consumer(msg)
-
-    def verify_version(self):
-        cnn = psycopg2.connect(self.receiver.dsn)
-        cur = cnn.cursor()
-        try:
-            cur.execute('select replisome_version()')
-        except psycopg2.ProgrammingError as e:
-            if e.pgcode == '42883':     # function not found
-                raise ReplisomeError("function replisome_version() not found")
-            else:
-                raise
-        else:
-            ver = cur.fetchone()[0]
-        finally:
-            cnn.rollback()
-            cnn.close()
-
-        check_version(ver)

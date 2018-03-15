@@ -5,6 +5,8 @@ from replisome.errors import ConfigError
 import logging
 logger = logging.getLogger('replisome.TableRenamer')
 
+__all__ = ['TableRenamer']
+
 
 class TableRenamer(object):
     """

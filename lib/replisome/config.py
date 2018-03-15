@@ -111,7 +111,7 @@ def make_object(config, package=None):
         raise ConfigError("options should be an object")
 
     if package and '.' not in cls:
-        cls = "%s.%s.%s" % (package, cls, cls)
+        cls = "%s.%s" % (package, cls)
 
     try:
         cls = deep_import(cls)

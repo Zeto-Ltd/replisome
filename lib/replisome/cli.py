@@ -26,24 +26,30 @@ def main():
             'consumer': {'class': 'Printer'}}
 
     pl = make_pipeline(conf, dsn=opt.dsn, slot=opt.slot)
-    pl.start(lsn=opt.lsn)
+    pl.start(slot_create=opt.slot_create, lsn=opt.lsn)
 
 
 def parse_cmdline():
     from argparse import ArgumentParser
     parser = ArgumentParser(description=__doc__)
     parser.add_argument('configfile', nargs='?',
-        help="configuration file to parse; if not specified print on stderr")
+                        help="configuration file to parse; if not specified "
+                             "print on stderr")
 
     parser.add_argument('--version', action='version',
-        version='%%(prog)s %s' % VERSION)
+                        version='%%(prog)s %s' % VERSION)
 
     parser.add_argument('--dsn',
-        help="database to read from (override config file)")
+                        help="database to read from (override config file)")
     parser.add_argument('--slot',
-        help="the replication slot to connect to (override config file)")
+                        help="the replication slot to connect to (override "
+                             "config file)")
+    parser.add_argument('--slot-create',
+                        action='store_true',
+                        help='creates the named replication slot')
     parser.add_argument('--lsn', default='0/0',
-        help="the replication starting point [default: %(default)s]")
+                        help="the replication starting point [default: "
+                             "%(default)s]")
 
     g = parser.add_mutually_exclusive_group()
     g.add_argument('-v', '--verbose', dest='loglevel',

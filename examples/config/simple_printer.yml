@@ -1,0 +1,8 @@
+receiver:
+  class: TestDecodingReceiver
+  dsn: postgresql://postgres@localhost/logicaltest
+  slot: all
+  plugin: test_decoding
+
+consumer:
+  class: Printer

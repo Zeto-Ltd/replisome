@@ -2,7 +2,7 @@ from distutils.version import StrictVersion
 
 from .errors import ReplisomeError
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
 
 # Complain if the server doesn't speak a version between these two
 SERVER_MIN_VER = StrictVersion('0.1')

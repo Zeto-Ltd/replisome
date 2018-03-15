@@ -2,8 +2,8 @@ import pytest
 from decimal import Decimal
 
 from replisome.errors import ReplisomeError
-from replisome.consumers.DataUpdater import DataUpdater
-from replisome.receivers.JsonReceiver import JsonReceiver
+from replisome.consumers import DataUpdater
+from replisome.receivers import JsonReceiver
 
 
 def test_insert(src_db, tgt_db, called):
