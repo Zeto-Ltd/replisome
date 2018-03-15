@@ -11,3 +11,5 @@ README.html
 /dist
 /lib/replisome.egg-info/
 /.eggs
+# ignore Intellij files
+/.idea/
