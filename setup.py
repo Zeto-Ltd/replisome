@@ -69,7 +69,11 @@ setup(
     url='https://github.com/GambitResearch/replisome',
     keywords=['database', 'replication', 'PostgreSQL'],
     classifiers=[x for x in classifiers.strip().splitlines()],
-    install_requires=['six', 'PyYAML', 'psycopg2>=2.7'],
+    install_requires=[
+        'six==1.11.0',
+        'PyYAML==3.12',
+        'psycopg2-binary==2.7.4'
+    ],
     tests_require=parse_requirements(
         os.path.join(DIR, 'tests/pytests/requirements.txt')),
     zip_safe=False,
