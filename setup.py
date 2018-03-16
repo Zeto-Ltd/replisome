@@ -6,6 +6,7 @@ from setuptools import setup, find_packages
 from setuptools.command.test import test as TestCommand
 
 DIR = os.path.dirname(__file__)
+TEST_REQUIREMENTS_PATH = os.path.join(DIR, 'tests/pytests/requirements.txt')
 
 with open(os.path.join(DIR, "README.rst")) as f:
     readme = f.read().splitlines()
@@ -75,8 +76,9 @@ setup(
         'PyYAML==3.12',
         'psycopg2-binary==2.7.4'
     ],
-    tests_require=parse_requirements(
-        os.path.join(DIR, 'tests/pytests/requirements.txt')),
+    tests_require=(parse_requirements(TEST_REQUIREMENTS_PATH)
+                   if os.path.exists(TEST_REQUIREMENTS_PATH) else
+                   []),
     zip_safe=False,
     entry_points={
         'console_scripts': [
