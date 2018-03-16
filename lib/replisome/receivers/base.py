@@ -45,13 +45,10 @@ class BaseReceiver(object):
         if not connection.async_:
             raise ValueError('the connection should be asynchronous')
 
-        cur = connection.cursor()
-
         if slot_create:
-            self.logger.info('creating replication slot "%s"', self.slot)
-            cur.create_replication_slot(self.slot, output_plugin=self.plugin)
-            wait_select(connection)
+            self.create_slot()
 
+        cur = connection.cursor()
         stmt = self._get_replication_statement(connection, lsn)
 
         self.logger.info(
@@ -128,6 +125,35 @@ class BaseReceiver(object):
             connection_factory=LogicalReplicationConnection)
         wait_select(cnn)
         return cnn
+
+    def create_slot(self):
+        """
+        Creates the replication slot, if it hasn't been created already.
+        """
+        self.logger.info('creating replication slot "%s" with plugin %s',
+                         self.slot, self.plugin)
+        command = '''
+WITH new_slots(slot_name) AS (
+    VALUES(%s)
+)
+SELECT CASE WHEN slots.slot_name IS NULL THEN
+       pg_create_logical_replication_slot(new_slots.slot_name, %s)
+       ELSE NULL
+       END
+FROM new_slots
+  LEFT JOIN (SELECT slot_name
+             FROM pg_replication_slots
+             WHERE slot_name = %s) slots
+  ON slots.slot_name = new_slots.slot_name
+'''
+        try:
+            # must use separate connection as main replication connection
+            # doesn't support the custom query
+            with psycopg2.connect(self.dsn) as conn, conn.cursor() as cursor:
+                cursor.execute(command, (self.slot, self.plugin, self.slot))
+        except psycopg2.Error as e:
+            self.logger.error(
+                'error dropping replication slot: %s', e)
 
     def drop_slot(self):
         try:
