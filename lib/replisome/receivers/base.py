@@ -38,15 +38,16 @@ class BaseReceiver(object):
     def __del__(self):
         self.stop()
 
-    def start(self, connection, slot_create=False, lsn=None):
+    def start(self, slot_create=False, lsn=None, block=True):
         if not self.slot:
             raise ValueError('no slot specified')
 
-        if not connection.async_:
-            raise ValueError('the connection should be asynchronous')
-
         if slot_create:
             self.create_slot()
+
+        connection = self.create_connection()
+        if not connection.async_:
+            raise ValueError('the connection should be asynchronous')
 
         cur = connection.cursor()
         stmt = self._get_replication_statement(connection, lsn)
@@ -56,19 +57,27 @@ class BaseReceiver(object):
         cur.start_replication_expert(stmt, decode=False)
         wait_select(connection)
 
-        while 1:
-            msg = cur.read_message()
-            if msg:
-                self.consume(msg)
-                continue
+        if block:
+            while self.on_loop(connection, cur):
+                pass
 
+        cur.close()
+        return connection
+
+    def on_loop(self, connection, cursor):
+        is_running = True
+        msg = cursor.read_message()
+        if msg:
+            self.consume(msg)
+        else:
             # TODO: handle InterruptedError
             sel = select(
                 [self._shutdown_pipe[0], connection], [], [], 10)
             if not any(sel):
-                cur.send_feedback()
+                cursor.send_feedback()
             elif self._shutdown_pipe[0] in sel[0]:
-                break
+                is_running = False
+        return is_running
 
     def stop(self):
         os.write(self._shutdown_pipe[1], b'stop')

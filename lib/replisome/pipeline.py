@@ -23,10 +23,12 @@ class Pipeline(object):
 
         self.receiver.verify()
         self.receiver.message_cb = self.process_message
-        cnn = self.receiver.create_connection()
 
         self.state = self.RUNNING
-        self.receiver.start(cnn, **kwargs)
+        return self.receiver.start(**kwargs)
+
+    def on_loop(self, *args, **kwargs):
+        return self.receiver.on_loop(*args, **kwargs)
 
     def stop(self):
         if self.state != self.RUNNING:
