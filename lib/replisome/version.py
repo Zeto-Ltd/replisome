@@ -6,7 +6,7 @@ VERSION = '0.2.0'
 
 # Complain if the server doesn't speak a version between these two
 SERVER_MIN_VER = StrictVersion('0.1')
-SERVER_MAX_VER = StrictVersion('0.2')
+SERVER_MAX_VER = StrictVersion('0.3')
 
 
 def check_version(ver):

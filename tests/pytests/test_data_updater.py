@@ -12,7 +12,7 @@ def test_insert(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.make_repl_conn())
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -74,9 +74,8 @@ def test_insert_missing_table(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn, skip_missing_columns=True)
     c = called(du, 'process_message')
 
-    rconn = src_db.make_repl_conn()
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, rconn)
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -92,12 +91,11 @@ def test_insert_missing_table(src_db, tgt_db, called):
         c.get()
 
     jr.stop()
-    rconn.close()
 
     tcur.execute("create table testins (id serial primary key, data text)")
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.make_repl_conn())
+    src_db.thread_receive(jr, src_db.dsn)
     c.get()
 
     tcur.execute("select * from testins")
@@ -108,9 +106,8 @@ def test_insert_missing_col(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn)
     c = called(du, 'process_message')
 
-    rconn = src_db.make_repl_conn()
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, rconn)
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -134,14 +131,13 @@ def test_insert_missing_col(src_db, tgt_db, called):
     assert tcur.fetchall() == []
 
     jr.stop()
-    rconn.close()
     tcur.execute("alter table testins add more text")
 
     du = DataUpdater(tgt_db.conn.dsn)
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.make_repl_conn())
+    src_db.thread_receive(jr, src_db.dsn)
 
     c.get()
     tcur.execute("select * from testins")
@@ -153,7 +149,7 @@ def test_insert_conflict(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.make_repl_conn())
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -193,7 +189,7 @@ def test_insert_conflict_do_nothing(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.make_repl_conn())
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -228,7 +224,7 @@ def test_update(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.make_repl_conn())
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -285,9 +281,8 @@ def test_update_missing_table(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn, skip_missing_columns=True)
     c = called(du, 'process_message')
 
-    rconn = src_db.make_repl_conn()
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, rconn)
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -310,12 +305,11 @@ def test_update_missing_table(src_db, tgt_db, called):
         c.get()
 
     jr.stop()
-    rconn.close()
 
     tcur.execute("alter table testins rename to testins2")
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.make_repl_conn())
+    src_db.thread_receive(jr, src_db.dsn)
     c.get()
 
     tcur.execute("select * from testins2")
@@ -326,9 +320,8 @@ def test_update_missing_col(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn)
     c = called(du, 'process_message')
 
-    rconn = src_db.make_repl_conn()
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, rconn)
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -361,12 +354,11 @@ def test_update_missing_col(src_db, tgt_db, called):
     assert rs == [(1, 'hello'), (2, 'world')]
 
     jr.stop()
-    rconn.close()
 
     tcur.execute("alter table testup add more text")
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.make_repl_conn())
+    src_db.thread_receive(jr, src_db.dsn)
     c.get()
 
     tcur.execute("select id, data, more from testup order by id")
@@ -380,7 +372,7 @@ def test_delete(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.make_repl_conn())
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -425,9 +417,8 @@ def test_delete_missing_table(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn, skip_missing_columns=True)
     c = called(du, 'process_message')
 
-    rconn = src_db.make_repl_conn()
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, rconn)
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -451,12 +442,11 @@ def test_delete_missing_table(src_db, tgt_db, called):
         c.get()
 
     jr.stop()
-    rconn.close()
 
     tcur.execute("alter table testins rename to testins2")
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.make_repl_conn())
+    src_db.thread_receive(jr, src_db.dsn)
     c.get()
 
     tcur.execute("select * from testins2")
@@ -467,9 +457,8 @@ def test_toast(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn, skip_missing_columns=True)
     c = called(du, 'process_message')
 
-    rconn = src_db.make_repl_conn()
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, rconn)
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -549,9 +538,8 @@ def test_numeric(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn)
     c = called(du, 'process_message')
 
-    rconn = src_db.make_repl_conn()
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, rconn)
+    src_db.thread_receive(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()

@@ -78,7 +78,10 @@ class JsonReceiver(BaseReceiver):
             chunk[:70], len(chunk) > 70 and '...' or '')
         self._chunks.append(chunk)
 
-        if chunk == u']}' or chunk == u'\t]\n}':
+        # attempt parsing each chunk as part of the whole
+        try:
             obj = json.loads(''.join(self._chunks))
             del self._chunks[:]
             self.message_cb(obj)
+        except json.JSONDecodeError:
+            pass

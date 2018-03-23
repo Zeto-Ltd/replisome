@@ -60,9 +60,11 @@ class BaseReceiver(object):
         if block:
             while self.on_loop(connection, cur):
                 pass
-
-        cur.close()
-        return connection
+            cur.close()
+            connection.close()
+        else:
+            cur.close()
+            return connection
 
     def on_loop(self, connection, cursor):
         is_running = True

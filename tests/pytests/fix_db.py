@@ -1,4 +1,5 @@
 import os
+import random
 from threading import Thread
 
 import pytest
@@ -51,12 +52,12 @@ class TestDatabase(object):
     """
     def __init__(self, dsn):
         self.dsn = dsn
-        self.slot = 'rs_test'
+        self.slot = 'rs_test_' + str(random.randint(0, 1234567890))
         self.plugin = 'replisome'
 
         self._repl_conn = self._conn = None
         self._conns = []
-        self._stop_callbacks = []
+        self._threads = []
         self._slot_created = False
 
     @property
@@ -81,17 +82,15 @@ class TestDatabase(object):
             self._repl_conn = self.make_repl_conn()
         return self._repl_conn
 
-    def at_exit(self, cb):
-        self._stop_callbacks.append(cb)
-
     def teardown(self):
         """
         Close the database connections and stop any receiving thread.
 
         Invoked at the end of the tests.
         """
-        for cb in self._stop_callbacks:
-            cb()
+        for thread in self._threads:
+            thread.stop()
+            thread.join()
 
         for cnn in self._conns:
             cnn.close()
@@ -157,26 +156,26 @@ class TestDatabase(object):
 
             self._slot_created = True
 
-    def thread_receive(self, receiver, connection, target=None):
+    def thread_receive(self, receiver, dsn, target=None):
         """
         Run the receiver loop of a receiver in a thread.
 
         Stop the receiver at the end of the test.
         """
-        def thread_receive_(cnn):
+        def thread_receive_(cur_dsn):
             try:
-                (target or receiver.start)(cnn)
+                receiver.dsn = cur_dsn
+                receiver.start()
             except ReplisomeError:
                 pass
+        if target is None:
+            target = thread_receive_
 
-        self.thread_run(
-            target=thread_receive_, at_exit=receiver.stop,
-            args=(connection,))
+        self.thread_run(target, receiver.stop, args=(dsn,))
 
-    def thread_run(self, target, at_exit=None, args=()):
+    def thread_run(self, target, at_exit, args=()):
         """Call a function in a thread. Call another function on stop."""
-        if at_exit:
-            self.at_exit(at_exit)
-
         t = Thread(target=target, args=args)
+        t.stop = at_exit
         t.start()
+        self._threads.append(t)
