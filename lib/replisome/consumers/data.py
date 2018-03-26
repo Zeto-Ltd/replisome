@@ -11,6 +11,8 @@ logger = logging.getLogger('replisome.DataUpdater')
 
 UNCHANGED_TOAST = {}
 
+__all__ = ['DataUpdater']
+
 
 def tupgetter(*idxs):
     """Like itemgetter, but return a 1-tuple if the input is one index."""

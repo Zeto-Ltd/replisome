@@ -1,7 +1,7 @@
 import pytest
 from six.moves.queue import Queue, Empty
 
-from replisome.receivers.JsonReceiver import JsonReceiver
+from replisome.receivers import JsonReceiver
 
 
 def test_insert(src_db):
@@ -87,11 +87,11 @@ def test_break_half_message(src_db):
     has_broken = []
 
     class BrokenReceiver(JsonReceiver):
-        def consume(self, msg):
+        def consume(self, raw_chunk):
             # Throw a tantrum just before closing the message
-            if msg.payload == b']}':
+            if raw_chunk.payload == b']}':
                 raise ZeroDivisionError
-            return super(BrokenReceiver, self).consume(msg)
+            return super(BrokenReceiver, self).consume(raw_chunk)
 
     r = Receiver()
     jr = BrokenReceiver(slot=src_db.slot, message_cb=r.receive)

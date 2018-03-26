@@ -1,6 +1,8 @@
 import sys
 import json
 
+__all__ = ['Printer']
+
 
 class Printer(object):
     """
