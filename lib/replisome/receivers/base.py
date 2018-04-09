@@ -44,6 +44,8 @@ class BaseReceiver(object):
 
         if slot_create:
             self.create_slot()
+        if lsn is None:
+            lsn = self.get_restart_lsn()
 
         connection = self.create_connection()
         if not connection.async_:
@@ -60,9 +62,11 @@ class BaseReceiver(object):
         if block:
             while self.on_loop(connection, cur):
                 pass
-
-        cur.close()
-        return connection
+            cur.close()
+            connection.close()
+        else:
+            cur.close()
+            return connection
 
     def on_loop(self, connection, cursor):
         is_running = True
@@ -87,7 +91,7 @@ class BaseReceiver(object):
             sql.SQL('START_REPLICATION SLOT '),
             sql.Identifier(self.slot),
             sql.SQL(' LOGICAL '),
-            sql.SQL(lsn or '0/0')]
+            sql.SQL(lsn)]
 
         if self.options:
             bits.append(sql.SQL(' ('))
@@ -135,6 +139,26 @@ class BaseReceiver(object):
         wait_select(cnn)
         return cnn
 
+    def get_restart_lsn(self):
+        """
+        Returns the restart LSN for the replication slot as stored in the
+        pg_replication_slots DB table. Returns default start position if
+        slot doesn't exist.
+
+        :return: string containing restart LSN for current slot
+        """
+        command = '''
+        SELECT restart_lsn FROM pg_replication_slots WHERE slot_name = %s
+        '''
+        lsn = '0/0'
+        try:
+            with psycopg2.connect(self.dsn) as conn, conn.cursor() as cursor:
+                cursor.execute(command, [self.slot])
+                lsn = cursor.fetchone()[0]
+        except psycopg2.Error as e:
+            self.logger.error('error retrieving LSN: %s', e)
+        return lsn
+
     def create_slot(self):
         """
         Creates the replication slot, if it hasn't been created already.
@@ -161,8 +185,7 @@ FROM new_slots
             with psycopg2.connect(self.dsn) as conn, conn.cursor() as cursor:
                 cursor.execute(command, (self.slot, self.plugin, self.slot))
         except psycopg2.Error as e:
-            self.logger.error(
-                'error dropping replication slot: %s', e)
+            self.logger.error('error creating replication slot: %s', e)
 
     def drop_slot(self):
         try:
@@ -171,8 +194,7 @@ FROM new_slots
                 self.logger.info('dropping replication slot "%s"', self.slot)
                 cur.drop_replication_slot(self.slot)
         except Exception as e:
-            self.logger.error(
-                'error dropping replication slot: %s', e)
+            self.logger.error('error dropping replication slot: %s', e)
 
     def close(self, connection):
         try:

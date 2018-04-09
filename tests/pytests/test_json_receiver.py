@@ -7,7 +7,7 @@ from replisome.receivers import JsonReceiver
 def test_insert(src_db):
     r = Receiver()
     jr = JsonReceiver(slot=src_db.slot, message_cb=r.receive)
-    src_db.thread_receive(jr, src_db.repl_conn)
+    src_db.thread_receive(jr, src_db.dsn)
 
     cur = src_db.conn.cursor()
     cur.execute("""
@@ -96,14 +96,14 @@ def test_break_half_message(src_db):
     r = Receiver()
     jr = BrokenReceiver(slot=src_db.slot, message_cb=r.receive)
 
-    def wrapper(cnn):
+    def wrapper(dsn):
+        jr.dsn = dsn
         try:
-            jr.start(cnn)
+            jr.start()
         except ZeroDivisionError:
             has_broken.append(True)
 
-    cnn = src_db.make_repl_conn()
-    src_db.thread_receive(jr, cnn, target=wrapper)
+    src_db.thread_receive(jr, src_db.dsn, target=wrapper)
 
     cur = src_db.conn.cursor()
     cur.execute("drop table if exists somedata")
@@ -120,11 +120,8 @@ def test_break_half_message(src_db):
     jr.stop()
 
     # Replace the receiver with something working
-    cnn.close()
-    cnn = src_db.make_repl_conn()
-
     jr = JsonReceiver(slot=src_db.slot, message_cb=r.receive)
-    src_db.thread_receive(jr, cnn)
+    src_db.thread_receive(jr, src_db.dsn)
 
     cur.execute("insert into somedata default values")
 
