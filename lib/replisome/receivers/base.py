@@ -1,4 +1,4 @@
-import os
+from datetime import datetime, timedelta
 from select import select
 import logging
 
@@ -10,7 +10,7 @@ from psycopg2 import sql
 class BaseReceiver(object):
 
     def __init__(self, slot=None, dsn=None, message_cb=None,
-                 plugin='replisome', options=None):
+                 plugin='replisome', options=None, status_interval=10):
         self.slot = slot
         self.dsn = dsn
         self.plugin = plugin
@@ -19,8 +19,11 @@ class BaseReceiver(object):
             self.message_cb = message_cb
         self.logger = logging.getLogger(
             'replisome.{}'.format(self.__class__.__name__))
-
-        self._shutdown_pipe = os.pipe()
+        self.connection = None
+        self.cursor = None
+        self.is_running = False
+        self.next_wait_time = None
+        self.status_delta = timedelta(seconds=status_interval)
 
     def verify(self):
         """
@@ -36,7 +39,28 @@ class BaseReceiver(object):
         return cls(options={})
 
     def __del__(self):
-        self.stop()
+        self.stop_blocking()
+        self.close()
+
+    def stop_blocking(self):
+        self.is_running = False
+
+    def close(self):
+        if self.cursor:
+            try:
+                self.cursor.close()
+            except Exception:
+                self.logger.exception('Failed to close connection cursor')
+            self.cursor = None
+        if self.connection:
+            try:
+                self.connection.close()
+            except Exception:
+                self.logger.exception('Failed to close connection')
+            self.connection = None
+
+    def update_status_time(self):
+        self.next_wait_time = datetime.utcnow() + self.status_delta
 
     def start(self, slot_create=False, lsn=None, block=True):
         if not self.slot:
@@ -47,44 +71,34 @@ class BaseReceiver(object):
         if lsn is None:
             lsn = self.get_restart_lsn()
 
-        connection = self.create_connection()
-        if not connection.async_:
+        self.create_connection()
+        if not self.connection.async_:
             raise ValueError('the connection should be asynchronous')
 
-        cur = connection.cursor()
-        stmt = self._get_replication_statement(connection, lsn)
+        stmt = self._get_replication_statement(self.connection, lsn)
 
         self.logger.info(
             'starting streaming from slot "%s"', self.slot)
-        cur.start_replication_expert(stmt, decode=False)
-        wait_select(connection)
+        self.cursor.start_replication_expert(stmt, decode=False)
+        wait_select(self.connection)
 
+        self.update_status_time()
         if block:
-            while self.on_loop(connection, cur):
-                pass
-            cur.close()
-            connection.close()
-        else:
-            cur.close()
-            return connection
+            self.is_running = True
+            while self.is_running:
+                self.on_loop()
+                select([self.connection], [], [], 2)
+            self.close()
 
-    def on_loop(self, connection, cursor):
-        is_running = True
-        msg = cursor.read_message()
+    def on_loop(self):
+        msg = self.cursor.read_message()
         if msg:
             self.consume(msg)
-        else:
-            # TODO: handle InterruptedError
-            sel = select(
-                [self._shutdown_pipe[0], connection], [], [], 10)
-            if not any(sel):
-                cursor.send_feedback()
-            elif self._shutdown_pipe[0] in sel[0]:
-                is_running = False
-        return is_running
-
-    def stop(self):
-        os.write(self._shutdown_pipe[1], b'stop')
+            self.cursor.send_feedback(flush_lsn=msg.data_start)
+            self.update_status_time()
+        elif self.next_wait_time < datetime.utcnow():
+            self.cursor.send_feedback()
+            self.update_status_time()
 
     def _get_replication_statement(self, cnn, lsn):
         bits = [
@@ -119,14 +133,12 @@ class BaseReceiver(object):
             format(self.__class__.__name__))
 
     def consume(self, raw_chunk):
-        cnn = raw_chunk.cursor.connection
-        if cnn.notices:
-            for n in cnn.notices:
+        if self.connection.notices:
+            for n in self.connection.notices:
                 self.logger.debug('server: %s', n.rstrip())
-            del cnn.notices[:]
+            del self.connection.notices[:]
 
         self.process_payload(raw_chunk.payload)
-        raw_chunk.cursor.send_feedback(flush_lsn=raw_chunk.data_start)
 
     def message_cb(self, obj):
         self.logger.info('message received: %s', obj)
@@ -137,7 +149,8 @@ class BaseReceiver(object):
             self.dsn, async_=async_,
             connection_factory=LogicalReplicationConnection)
         wait_select(cnn)
-        return cnn
+        self.connection = cnn
+        self.cursor = cnn.cursor()
 
     def get_restart_lsn(self):
         """
@@ -154,7 +167,9 @@ class BaseReceiver(object):
         try:
             with psycopg2.connect(self.dsn) as conn, conn.cursor() as cursor:
                 cursor.execute(command, [self.slot])
-                lsn = cursor.fetchone()[0]
+                result = cursor.fetchone()
+                if result:
+                    lsn = result[0]
         except psycopg2.Error as e:
             self.logger.error('error retrieving LSN: %s', e)
         return lsn
@@ -195,10 +210,3 @@ FROM new_slots
                 cur.drop_replication_slot(self.slot)
         except Exception as e:
             self.logger.error('error dropping replication slot: %s', e)
-
-    def close(self, connection):
-        try:
-            connection.close()
-        except Exception as e:
-            self.logger.error(
-                'error closing receiving connection - ignoring: %s', e)

@@ -11,6 +11,10 @@ class Pipeline(object):
         self.consumer = None
         self.state = self.NOT_STARTED
 
+    def __del__(self):
+        if self.state == self.RUNNING:
+            self.stop()
+
     def start(self, **kwargs):
         if self.state != self.NOT_STARTED:
             raise ValueError("can't start pipeline in state %s" % self.state)
@@ -25,16 +29,16 @@ class Pipeline(object):
         self.receiver.message_cb = self.process_message
 
         self.state = self.RUNNING
-        return self.receiver.start(**kwargs)
+        self.receiver.start(**kwargs)
 
     def on_loop(self, *args, **kwargs):
-        return self.receiver.on_loop(*args, **kwargs)
+        self.receiver.on_loop(*args, **kwargs)
 
     def stop(self):
         if self.state != self.RUNNING:
             raise ValueError("can't stop pipeline in state %s" % self.state)
 
-        self.receiver.stop()
+        self.receiver.stop_blocking()
         self.state = self.STOPPED
 
     def process_message(self, msg):
