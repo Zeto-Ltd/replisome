@@ -30,7 +30,7 @@ def make_pipeline(config, dsn=None, slot=None, receiver=None, consumer=None,
         make_receiver(config.get('receiver'), dsn=dsn, slot=slot)
     pl.consumer = consumer or \
         make_consumer(config.get('consumer'))
-    pl.filters = filters or make_filters(config.get('filters'))
+    pl.filters = filters or [f for f in make_filters(config.get('filters'))]
     return pl
 
 

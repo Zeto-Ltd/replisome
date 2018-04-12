@@ -78,7 +78,7 @@ class BaseReceiver(object):
         stmt = self._get_replication_statement(self.connection, lsn)
 
         self.logger.info(
-            'starting streaming from slot "%s"', self.slot)
+            'starting streaming from slot "%s" at LSN %s', self.slot, lsn)
         self.cursor.start_replication_expert(stmt, decode=False)
         wait_select(self.connection)
 
@@ -203,10 +203,14 @@ FROM new_slots
             self.logger.error('error creating replication slot: %s', e)
 
     def drop_slot(self):
+        self.logger.info('dropping replication slot "%s"', self.slot)
+        command = '''
+SELECT pg_drop_replication_slot(slot_name)
+FROM pg_replication_slots
+WHERE slot_name = %s
+'''
         try:
-            with self.create_connection(async_=False) as cnn:
-                cur = cnn.cursor()
-                self.logger.info('dropping replication slot "%s"', self.slot)
-                cur.drop_replication_slot(self.slot)
+            with psycopg2.connect(self.dsn) as conn, conn.cursor() as cursor:
+                cursor.execute(command, [self.slot])
         except Exception as e:
             self.logger.error('error dropping replication slot: %s', e)
