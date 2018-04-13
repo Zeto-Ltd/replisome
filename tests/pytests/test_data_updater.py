@@ -1,5 +1,6 @@
 import pytest
 from decimal import Decimal
+import time
 
 from replisome.errors import ReplisomeError
 from replisome.consumers import DataUpdater
@@ -90,7 +91,7 @@ def test_insert_missing_table(src_db, tgt_db, called):
     with pytest.raises(ReplisomeError):
         c.get()
 
-    jr.stop()
+    jr.stop_blocking()
 
     tcur.execute("create table testins (id serial primary key, data text)")
 
@@ -130,7 +131,7 @@ def test_insert_missing_col(src_db, tgt_db, called):
     tcur.execute("select * from testins")
     assert tcur.fetchall() == []
 
-    jr.stop()
+    jr.stop_blocking()
     tcur.execute("alter table testins add more text")
 
     du = DataUpdater(tgt_db.conn.dsn)
@@ -304,7 +305,7 @@ def test_update_missing_table(src_db, tgt_db, called):
     with pytest.raises(ReplisomeError):
         c.get()
 
-    jr.stop()
+    jr.stop_blocking()
 
     tcur.execute("alter table testins rename to testins2")
 
@@ -353,7 +354,7 @@ def test_update_missing_col(src_db, tgt_db, called):
     rs = tcur.fetchall()
     assert rs == [(1, 'hello'), (2, 'world')]
 
-    jr.stop()
+    jr.stop_blocking()
 
     tcur.execute("alter table testup add more text")
 
@@ -441,7 +442,7 @@ def test_delete_missing_table(src_db, tgt_db, called):
     with pytest.raises(ReplisomeError):
         c.get()
 
-    jr.stop()
+    jr.stop_blocking()
 
     tcur.execute("alter table testins rename to testins2")
 

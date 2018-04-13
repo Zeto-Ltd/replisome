@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from select import select
 import logging
+import os
 
 import psycopg2
 from psycopg2.extras import LogicalReplicationConnection, wait_select
@@ -22,6 +23,7 @@ class BaseReceiver(object):
         self.connection = None
         self.cursor = None
         self.is_running = False
+        self._shutdown_pipe = os.pipe()
         self.next_wait_time = None
         self.status_delta = timedelta(seconds=status_interval)
 
@@ -44,6 +46,7 @@ class BaseReceiver(object):
 
     def stop_blocking(self):
         self.is_running = False
+        os.write(self._shutdown_pipe[1], b'stop')
 
     def close(self):
         if self.cursor:
@@ -87,7 +90,7 @@ class BaseReceiver(object):
             self.is_running = True
             while self.is_running:
                 self.on_loop()
-                select([self.connection], [], [], 2)
+                select([self._shutdown_pipe[0], self.connection], [], [], 2)
             self.close()
 
     def on_loop(self):

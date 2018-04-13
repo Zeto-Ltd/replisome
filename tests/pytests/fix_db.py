@@ -1,10 +1,8 @@
 import os
-import random
 from threading import Thread
 
 import pytest
 import psycopg2
-from psycopg2.extras import LogicalReplicationConnection, wait_select
 
 from replisome.errors import ReplisomeError
 
@@ -52,10 +50,10 @@ class TestDatabase(object):
     """
     def __init__(self, dsn):
         self.dsn = dsn
-        self.slot = 'rs_test_' + str(random.randint(0, 1234567890))
+        self.slot = 'rs_test_slot'
         self.plugin = 'replisome'
 
-        self._repl_conn = self._conn = None
+        self._conn = None
         self._conns = []
         self._threads = []
         self._slot_created = False
@@ -70,17 +68,6 @@ class TestDatabase(object):
         if not self._conn:
             self._conn = self.make_conn()
         return self._conn
-
-    @property
-    def repl_conn(self):
-        """
-        A replication connection to the database.
-
-        The object is always the same for the object lifetime.
-        """
-        if not self._repl_conn:
-            self._repl_conn = self.make_repl_conn()
-        return self._repl_conn
 
     def teardown(self):
         """
@@ -105,18 +92,6 @@ class TestDatabase(object):
         """
         cnn = psycopg2.connect(self.dsn, **kwargs)
         cnn.autocommit = autocommit
-        self._conns.append(cnn)
-        return cnn
-
-    def make_repl_conn(self, **kwargs):
-        """Create a new replication connection to the test database.
-
-        The connection is asynchronous, and will be closed on teardown().
-        """
-        cnn = psycopg2.connect(
-            self.dsn, connection_factory=LogicalReplicationConnection,
-            async_=True, **kwargs)
-        wait_select(cnn)
         self._conns.append(cnn)
         return cnn
 
@@ -171,7 +146,7 @@ class TestDatabase(object):
         if target is None:
             target = thread_receive_
 
-        self.thread_run(target, receiver.stop, args=(dsn,))
+        self.thread_run(target, receiver.stop_blocking, args=(dsn,))
 
     def thread_run(self, target, at_exit, args=()):
         """Call a function in a thread. Call another function on stop."""

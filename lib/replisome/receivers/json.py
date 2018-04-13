@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 import json
 
 import psycopg2
@@ -83,5 +85,5 @@ class JsonReceiver(BaseReceiver):
             obj = json.loads(''.join(self._chunks))
             del self._chunks[:]
             self.message_cb(obj)
-        except json.JSONDecodeError:
+        except ValueError:
             pass

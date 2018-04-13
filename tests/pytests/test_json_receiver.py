@@ -80,7 +80,7 @@ def test_insert(src_db):
     assert 'keytypes' not in c
     assert 'oldkey' not in c
 
-    jr.stop()
+    jr.stop_blocking()
 
 
 def test_break_half_message(src_db):
@@ -117,7 +117,7 @@ def test_break_half_message(src_db):
     else:
         pytest.fail("not broken enough, got message %s" % d)
 
-    jr.stop()
+    jr.stop_blocking()
 
     # Replace the receiver with something working
     jr = JsonReceiver(slot=src_db.slot, message_cb=r.receive)
