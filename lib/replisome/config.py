@@ -23,12 +23,14 @@ def parse_yaml_file(f):
         raise ConfigError("bad config file: %s" % e)
 
 
-def make_pipeline(config, dsn=None, slot=None):
+def make_pipeline(config, dsn=None, slot=None, receiver=None, consumer=None,
+                  filters=None):
     pl = Pipeline()
-    pl.receiver = make_receiver(config.get('receiver'), dsn=dsn, slot=slot)
-    pl.consumer = make_consumer(config.get('consumer'))
-    for f in make_filters(config.get('filters')):
-        pl.filters.append(f)
+    pl.receiver = receiver or \
+        make_receiver(config.get('receiver'), dsn=dsn, slot=slot)
+    pl.consumer = consumer or \
+        make_consumer(config.get('consumer'))
+    pl.filters = filters or [f for f in make_filters(config.get('filters'))]
     return pl
 
 

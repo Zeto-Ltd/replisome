@@ -6,10 +6,25 @@ class Pipeline(object):
     STOPPED = 'STOPPED'
 
     def __init__(self):
-        self.receiver = None
+        self._receiver = None
         self.filters = []
         self.consumer = None
         self.state = self.NOT_STARTED
+        self.blocking = False
+
+    def __del__(self):
+        if self.state == self.RUNNING:
+            self.stop()
+
+    @property
+    def receiver(self):
+        return self._receiver
+
+    @receiver.setter
+    def receiver(self, new_receiver):
+        new_receiver.verify()
+        new_receiver.message_cb = self.process_message
+        self._receiver = new_receiver
 
     def start(self, **kwargs):
         if self.state != self.NOT_STARTED:
@@ -21,20 +36,21 @@ class Pipeline(object):
         if not self.consumer:
             raise ValueError("can't start: no consumer")
 
-        self.receiver.verify()
-        self.receiver.message_cb = self.process_message
-
         self.state = self.RUNNING
-        return self.receiver.start(**kwargs)
+        self.blocking = kwargs.get('block', True)
+        self.receiver.start(**kwargs)
 
     def on_loop(self, *args, **kwargs):
-        return self.receiver.on_loop(*args, **kwargs)
+        self.receiver.on_loop(*args, **kwargs)
 
     def stop(self):
         if self.state != self.RUNNING:
             raise ValueError("can't stop pipeline in state %s" % self.state)
 
-        self.receiver.stop()
+        if self.blocking:
+            self.receiver.stop_blocking()
+        else:
+            self.receiver.close()
         self.state = self.STOPPED
 
     def process_message(self, msg):
