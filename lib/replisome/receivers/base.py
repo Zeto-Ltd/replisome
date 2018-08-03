@@ -116,7 +116,7 @@ class BaseReceiver(object):
         # shutdown requested, clean up
         if self._shutdown_pipe[0] in result[0]:
             # do final flush on clean shutdown
-            self.cursor.send_feedback()
+            self.cursor.send_feedback(flush_lsn=self.flush_lsn)
             self.is_running = False
             self.close()
 
