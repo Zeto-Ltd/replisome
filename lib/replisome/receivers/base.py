@@ -57,6 +57,10 @@ class BaseReceiver(object):
                          self.__class__.__name__)
         if self.cursor:
             try:
+                # do final flush of last successful message on shutdown
+                if self.flush_lsn > 0:
+                    self.cursor.send_feedback(flush_lsn=self.flush_lsn)
+                    wait_select(self.connection)
                 self.cursor.close()
             except Exception:
                 self.logger.exception('Failed to close connection cursor')
@@ -115,8 +119,6 @@ class BaseReceiver(object):
                         [], [], wait_time)
         # shutdown requested, clean up
         if self._shutdown_pipe[0] in result[0]:
-            # do final flush on clean shutdown
-            self.cursor.send_feedback(flush_lsn=self.flush_lsn)
             self.is_running = False
             self.close()
 

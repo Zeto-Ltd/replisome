@@ -425,8 +425,7 @@ def test_delete_missing_table(src_db, tgt_db, called):
 
     jr = JsonReceiver(slot=src_db.slot,
                       message_cb=du.process_message,
-                      flush_interval=0,
-                      block_wait=0.1)
+                      flush_interval=0)
     jr_thread = src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
