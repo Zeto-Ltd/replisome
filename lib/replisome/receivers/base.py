@@ -11,7 +11,8 @@ from psycopg2 import sql
 class BaseReceiver(object):
 
     def __init__(self, slot=None, dsn=None, message_cb=None, block=True,
-                 plugin='replisome', options=None, flush_interval=10):
+                 plugin='replisome', options=None, flush_interval=10,
+                 block_wait=0.1):
         self.slot = slot
         self.dsn = dsn
         self.plugin = plugin
@@ -26,7 +27,10 @@ class BaseReceiver(object):
         self.is_blocking = block
         self._shutdown_pipe = os.pipe()
         self.next_wait_time = None
-        self.flush_delta = timedelta(seconds=flush_interval)
+        self.blocking_wait = block_wait
+        self.flush_delta = None
+        if flush_interval > 0:
+            self.flush_delta = timedelta(seconds=flush_interval)
 
     def verify(self):
         """
@@ -52,13 +56,13 @@ class BaseReceiver(object):
             self.close(flush=True)
 
     def close(self, flush=False):
-        self.logger.info('Closing DB connection for receiver %s',
+        self.logger.info('Closing DB connection for %s',
                          self.__class__.__name__)
-        if flush:
-            # support final flush on clean shutdown
-            self.cursor.send_feedback()
         if self.cursor:
             try:
+                if flush:
+                    # support final flush on clean shutdown
+                    self.cursor.send_feedback()
                 self.cursor.close()
             except Exception:
                 self.logger.exception('Failed to close connection cursor')
@@ -71,7 +75,8 @@ class BaseReceiver(object):
             self.connection = None
 
     def update_status_time(self):
-        self.next_wait_time = datetime.utcnow() + self.flush_delta
+        if self.flush_delta is not None:
+            self.next_wait_time = datetime.utcnow() + self.flush_delta
 
     def start(self, lsn=None):
         if not self.slot:
@@ -95,7 +100,7 @@ class BaseReceiver(object):
             try:
                 while self.is_running:
                     self.on_loop()
-                    self.wait_for_data()
+                    self.wait_for_data(timeout=self.blocking_wait)
             finally:
                 self.close(flush=not self.is_running)
 
@@ -106,10 +111,10 @@ class BaseReceiver(object):
         msg = self.cursor.read_message()
         if msg:
             self.consume(msg)
-        if self.next_wait_time < datetime.utcnow():
-            flush_lsn = msg.data_start if msg else 0
-            self.logger.debug('Flushing slot WAL with LSN %s', flush_lsn)
-            self.cursor.send_feedback(flush_lsn=flush_lsn)
+        if self.flush_delta is None or self.next_wait_time < datetime.utcnow():
+            flush_lsn = msg.wal_end if msg else 0
+            self.cursor.send_feedback(flush_lsn=flush_lsn, reply=True)
+            wait_select(self.connection)
             self.update_status_time()
 
     def _get_replication_statement(self, cnn, lsn):

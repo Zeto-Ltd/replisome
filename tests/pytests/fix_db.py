@@ -7,8 +7,6 @@ from threading import Thread
 import pytest
 import psycopg2
 
-from replisome.errors import ReplisomeError
-
 logger = logging.getLogger(__name__)
 
 
