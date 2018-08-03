@@ -45,7 +45,11 @@ create_estate_for_relation(Relation rel, bool hasTriggers)
 	rte->relkind = rel->rd_rel->relkind;
 
 	resultRelInfo = makeNode(ResultRelInfo);
+#if PG_VERSION_NUM >= 100000
+	InitResultRelInfo(resultRelInfo, rel, 1, NULL, 0);
+#else
 	InitResultRelInfo(resultRelInfo, rel, 1, 0);
+#endif
 
 	/* Initialize executor state. */
 	estate = CreateExecutorState();
