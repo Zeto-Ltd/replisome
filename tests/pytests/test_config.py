@@ -1,4 +1,3 @@
-import time
 import yaml
 import pytest
 
@@ -87,6 +86,7 @@ def test_pipeline(configfile, src_db, tgt_db, called):
 
     conf = config.parse_yaml(configfile)
     pl = config.make_pipeline(conf)
+    pl.receiver.blocking_wait = 0.1
     c = called(pl.consumer, 'process_message')
 
     src_db.run_pipeline(pl)

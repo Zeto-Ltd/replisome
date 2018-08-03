@@ -277,7 +277,6 @@ def test_update(src_db, tgt_db, called):
     assert tcur.fetchone()[0] == 3
 
 
-@pytest.mark.xfail
 def test_update_missing_table(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn, skip_missing_columns=True)
     c = called(du, 'process_message')
@@ -320,7 +319,6 @@ def test_update_missing_table(src_db, tgt_db, called):
     assert tcur.fetchall() == [(1, 'world')]
 
 
-@pytest.mark.xfail
 def test_update_missing_col(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn)
     c = called(du, 'process_message')
@@ -421,14 +419,14 @@ def test_delete(src_db, tgt_db, called):
     assert tcur.fetchone()[0] == 4
 
 
-@pytest.mark.xfail
 def test_delete_missing_table(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn, skip_missing_columns=True)
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot,
                       message_cb=du.process_message,
-                      flush_interval=0)
+                      flush_interval=0,
+                      block_wait=0.1)
     jr_thread = src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()

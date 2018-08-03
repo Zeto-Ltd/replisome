@@ -12,7 +12,7 @@ class BaseReceiver(object):
 
     def __init__(self, slot=None, dsn=None, message_cb=None, block=True,
                  plugin='replisome', options=None, flush_interval=10,
-                 block_wait=0.1):
+                 block_wait=2.0):
         self.slot = slot
         self.dsn = dsn
         self.plugin = plugin
@@ -29,6 +29,7 @@ class BaseReceiver(object):
         self.next_wait_time = None
         self.blocking_wait = block_wait
         self.flush_delta = None
+        self.flush_lsn = 0
         if flush_interval > 0:
             self.flush_delta = timedelta(seconds=flush_interval)
 
@@ -49,20 +50,13 @@ class BaseReceiver(object):
         self.stop()
 
     def stop(self):
-        if self.is_blocking:
-            self.is_running = False
         os.write(self._shutdown_pipe[1], b'stop')
-        if not self.is_blocking:
-            self.close(flush=True)
 
-    def close(self, flush=False):
+    def close(self):
         self.logger.info('Closing DB connection for %s',
                          self.__class__.__name__)
         if self.cursor:
             try:
-                if flush:
-                    # support final flush on clean shutdown
-                    self.cursor.send_feedback()
                 self.cursor.close()
             except Exception:
                 self.logger.exception('Failed to close connection cursor')
@@ -93,29 +87,38 @@ class BaseReceiver(object):
         self.cursor.start_replication_expert(stmt, decode=False)
         wait_select(self.connection)
 
+        self.flush_lsn = 0
         self.update_status_time()
         if self.is_blocking:
             self.logger.debug('Listening to replication slot %s', self.slot)
             self.is_running = True
             try:
                 while self.is_running:
-                    self.on_loop()
-                    self.wait_for_data(timeout=self.blocking_wait)
-            finally:
-                self.close(flush=not self.is_running)
+                    self.on_loop(wait_time=self.blocking_wait)
+            except Exception:
+                self.close()
+                raise
 
-    def wait_for_data(self, timeout=0.1):
-        select([self._shutdown_pipe[0], self.connection], [], [], timeout)
-
-    def on_loop(self):
+    def on_loop(self, wait_time=2.0):
         msg = self.cursor.read_message()
         if msg:
             self.consume(msg)
+            self.flush_lsn = msg.data_start
+
         if self.flush_delta is None or self.next_wait_time < datetime.utcnow():
-            flush_lsn = msg.wal_end if msg else 0
-            self.cursor.send_feedback(flush_lsn=flush_lsn, reply=True)
-            wait_select(self.connection)
+            self.cursor.send_feedback(flush_lsn=self.flush_lsn)
             self.update_status_time()
+            self.flush_lsn = 0
+
+        # wait for shutdown or DB connection data, if any forthcoming
+        result = select([self._shutdown_pipe[0], self.connection],
+                        [], [], wait_time)
+        # shutdown requested, clean up
+        if self._shutdown_pipe[0] in result[0]:
+            # do final flush on clean shutdown
+            self.cursor.send_feedback()
+            self.is_running = False
+            self.close()
 
     def _get_replication_statement(self, cnn, lsn):
         bits = [
