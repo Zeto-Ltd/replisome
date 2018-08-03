@@ -1,3 +1,4 @@
+import time
 import yaml
 import pytest
 
@@ -88,7 +89,7 @@ def test_pipeline(configfile, src_db, tgt_db, called):
     pl = config.make_pipeline(conf)
     c = called(pl.consumer, 'process_message')
 
-    src_db.thread_run(pl.start, pl.stop)
+    src_db.run_pipeline(pl)
 
     scur.execute("""
         insert into myapp.account (username, password) values

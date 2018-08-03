@@ -79,7 +79,7 @@ class DataUpdater(object):
             return
 
         elif status != ext.TRANSACTION_STATUS_IDLE:
-            logger.warn("rolling back transaction in status %s", status)
+            logger.warning("rolling back transaction in status %s", status)
             cnn.rollback()
 
         self._connection = cnn

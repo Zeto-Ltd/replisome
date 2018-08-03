@@ -7,7 +7,7 @@ from replisome.receivers import JsonReceiver
 def test_insert(src_db):
     r = Receiver()
     jr = JsonReceiver(slot=src_db.slot, message_cb=r.receive)
-    src_db.thread_receive(jr, src_db.dsn)
+    src_db.run_receiver(jr, src_db.dsn)
 
     cur = src_db.conn.cursor()
     cur.execute("""
@@ -80,8 +80,6 @@ def test_insert(src_db):
     assert 'keytypes' not in c
     assert 'oldkey' not in c
 
-    jr.stop_blocking()
-
 
 def test_break_half_message(src_db):
     has_broken = []
@@ -89,21 +87,23 @@ def test_break_half_message(src_db):
     class BrokenReceiver(JsonReceiver):
         def consume(self, raw_chunk):
             # Throw a tantrum just before closing the message
-            if raw_chunk.payload == b']}':
+            if b']}' in raw_chunk.payload:
                 raise ZeroDivisionError
             return super(BrokenReceiver, self).consume(raw_chunk)
 
     r = Receiver()
     jr = BrokenReceiver(slot=src_db.slot, message_cb=r.receive)
 
-    def wrapper(dsn):
-        jr.dsn = dsn
+    def wrapper():
         try:
-            jr.start()
+            jr.original_start()
         except ZeroDivisionError:
             has_broken.append(True)
+    original_start = jr.start
+    jr.start = wrapper
+    jr.original_start = original_start
 
-    src_db.thread_receive(jr, src_db.dsn, target=wrapper)
+    jr_thread = src_db.run_receiver(jr, src_db.dsn)
 
     cur = src_db.conn.cursor()
     cur.execute("drop table if exists somedata")
@@ -117,11 +117,11 @@ def test_break_half_message(src_db):
     else:
         pytest.fail("not broken enough, got message %s" % d)
 
-    jr.stop_blocking()
+    src_db.remove_thread(jr_thread)
 
     # Replace the receiver with something working
     jr = JsonReceiver(slot=src_db.slot, message_cb=r.receive)
-    src_db.thread_receive(jr, src_db.dsn)
+    src_db.run_receiver(jr, src_db.dsn)
 
     cur.execute("insert into somedata default values")
 

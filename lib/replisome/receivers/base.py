@@ -10,8 +10,8 @@ from psycopg2 import sql
 
 class BaseReceiver(object):
 
-    def __init__(self, slot=None, dsn=None, message_cb=None,
-                 plugin='replisome', options=None, status_interval=10):
+    def __init__(self, slot=None, dsn=None, message_cb=None, block=True,
+                 plugin='replisome', options=None, flush_interval=10):
         self.slot = slot
         self.dsn = dsn
         self.plugin = plugin
@@ -23,9 +23,10 @@ class BaseReceiver(object):
         self.connection = None
         self.cursor = None
         self.is_running = False
+        self.is_blocking = block
         self._shutdown_pipe = os.pipe()
         self.next_wait_time = None
-        self.status_delta = timedelta(seconds=status_interval)
+        self.flush_delta = timedelta(seconds=flush_interval)
 
     def verify(self):
         """
@@ -41,14 +42,21 @@ class BaseReceiver(object):
         return cls(options={})
 
     def __del__(self):
-        self.stop_blocking()
-        self.close()
+        self.stop()
 
-    def stop_blocking(self):
-        self.is_running = False
+    def stop(self):
+        if self.is_blocking:
+            self.is_running = False
         os.write(self._shutdown_pipe[1], b'stop')
+        if not self.is_blocking:
+            self.close(flush=True)
 
-    def close(self):
+    def close(self, flush=False):
+        self.logger.info('Closing DB connection for receiver %s',
+                         self.__class__.__name__)
+        if flush:
+            # support final flush on clean shutdown
+            self.cursor.send_feedback()
         if self.cursor:
             try:
                 self.cursor.close()
@@ -63,44 +71,45 @@ class BaseReceiver(object):
             self.connection = None
 
     def update_status_time(self):
-        self.next_wait_time = datetime.utcnow() + self.status_delta
+        self.next_wait_time = datetime.utcnow() + self.flush_delta
 
-    def start(self, slot_create=False, lsn=None, block=True):
+    def start(self, lsn=None):
         if not self.slot:
-            raise ValueError('no slot specified')
+            raise AttributeError('no slot specified')
 
-        if slot_create:
-            self.create_slot()
+        self.create_slot()
         if lsn is None:
             lsn = self.get_restart_lsn()
-
         self.create_connection()
-        if not self.connection.async_:
-            raise ValueError('the connection should be asynchronous')
 
+        self.logger.info('starting streaming from slot "%s" at LSN %s',
+                         self.slot, lsn)
         stmt = self._get_replication_statement(self.connection, lsn)
-
-        self.logger.info(
-            'starting streaming from slot "%s" at LSN %s', self.slot, lsn)
         self.cursor.start_replication_expert(stmt, decode=False)
         wait_select(self.connection)
 
         self.update_status_time()
-        if block:
+        if self.is_blocking:
+            self.logger.debug('Listening to replication slot %s', self.slot)
             self.is_running = True
-            while self.is_running:
-                self.on_loop()
-                select([self._shutdown_pipe[0], self.connection], [], [], 2)
-            self.close()
+            try:
+                while self.is_running:
+                    self.on_loop()
+                    self.wait_for_data()
+            finally:
+                self.close(flush=not self.is_running)
+
+    def wait_for_data(self, timeout=0.1):
+        select([self._shutdown_pipe[0], self.connection], [], [], timeout)
 
     def on_loop(self):
         msg = self.cursor.read_message()
         if msg:
             self.consume(msg)
-            self.cursor.send_feedback(flush_lsn=msg.data_start)
-            self.update_status_time()
-        elif self.next_wait_time < datetime.utcnow():
-            self.cursor.send_feedback()
+        if self.next_wait_time < datetime.utcnow():
+            flush_lsn = msg.data_start if msg else 0
+            self.logger.debug('Flushing slot WAL with LSN %s', flush_lsn)
+            self.cursor.send_feedback(flush_lsn=flush_lsn)
             self.update_status_time()
 
     def _get_replication_statement(self, cnn, lsn):
@@ -146,10 +155,10 @@ class BaseReceiver(object):
     def message_cb(self, obj):
         self.logger.info('message received: %s', obj)
 
-    def create_connection(self, async_=True):
+    def create_connection(self):
         self.logger.info('connecting to source database at "%s"', self.dsn)
         cnn = psycopg2.connect(
-            self.dsn, async_=async_,
+            self.dsn, async_=True,
             connection_factory=LogicalReplicationConnection)
         wait_select(cnn)
         self.connection = cnn

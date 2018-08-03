@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class Pipeline(object):
     """A chain of operations on a stream of changes"""
@@ -10,11 +14,16 @@ class Pipeline(object):
         self.filters = []
         self.consumer = None
         self.state = self.NOT_STARTED
-        self.blocking = False
 
     def __del__(self):
         if self.state == self.RUNNING:
             self.stop()
+
+    @property
+    def is_running(self):
+        return self.state == self.RUNNING and \
+               ((self.receiver.is_blocking and self.receiver.is_running) or
+                not self.receiver.is_blocking)
 
     @property
     def receiver(self):
@@ -36,9 +45,13 @@ class Pipeline(object):
         if not self.consumer:
             raise ValueError("can't start: no consumer")
 
-        self.state = self.RUNNING
-        self.blocking = kwargs.get('block', True)
+        logger.debug('Starting receiver with args %s', kwargs)
+        self.receiver.is_blocking = kwargs.pop('block', True)
+        if self.receiver.is_blocking:
+            self.state = self.RUNNING
         self.receiver.start(**kwargs)
+        if not self.receiver.is_blocking:
+            self.state = self.RUNNING
 
     def on_loop(self, *args, **kwargs):
         self.receiver.on_loop(*args, **kwargs)
@@ -47,10 +60,7 @@ class Pipeline(object):
         if self.state != self.RUNNING:
             raise ValueError("can't stop pipeline in state %s" % self.state)
 
-        if self.blocking:
-            self.receiver.stop_blocking()
-        else:
-            self.receiver.close()
+        self.receiver.stop()
         self.state = self.STOPPED
 
     def process_message(self, msg):
