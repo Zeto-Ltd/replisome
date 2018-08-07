@@ -12,7 +12,7 @@ def test_insert(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -75,7 +75,7 @@ def test_insert_missing_table(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    jr_thread = src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -90,12 +90,12 @@ def test_insert_missing_table(src_db, tgt_db, called):
     with pytest.raises(ReplisomeError):
         c.get()
 
-    jr.stop()
+    src_db.remove_thread(jr_thread)
 
     tcur.execute("create table testins (id serial primary key, data text)")
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    src_db.run_receiver(jr, src_db.dsn)
     c.get()
 
     tcur.execute("select * from testins")
@@ -107,7 +107,7 @@ def test_insert_missing_col(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    jr_thread = src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -130,14 +130,14 @@ def test_insert_missing_col(src_db, tgt_db, called):
     tcur.execute("select * from testins")
     assert tcur.fetchall() == []
 
-    jr.stop()
+    src_db.remove_thread(jr_thread)
     tcur.execute("alter table testins add more text")
 
     du = DataUpdater(tgt_db.conn.dsn)
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    src_db.run_receiver(jr, src_db.dsn)
 
     c.get()
     tcur.execute("select * from testins")
@@ -149,7 +149,7 @@ def test_insert_conflict(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -189,7 +189,7 @@ def test_insert_conflict_do_nothing(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -220,11 +220,11 @@ def test_insert_conflict_do_nothing(src_db, tgt_db, called):
 
 def test_update(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn, skip_missing_columns=True,
-                    skip_missing_tables=True)
+                     skip_missing_tables=True)
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -281,8 +281,10 @@ def test_update_missing_table(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn, skip_missing_columns=True)
     c = called(du, 'process_message')
 
-    jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    jr = JsonReceiver(slot=src_db.slot,
+                      message_cb=du.process_message,
+                      flush_interval=0)
+    jr_thread = src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -296,6 +298,7 @@ def test_update_missing_table(src_db, tgt_db, called):
     tcur.execute("drop table if exists testins2")
     tcur.execute("create table testins (id serial primary key, data text)")
 
+    # FIXME: this statement should be processed and removed from WAL but...
     scur.execute("insert into testins (data) values ('hello')")
     c.get()
     scur.execute("alter table testins rename to testins2")
@@ -304,12 +307,12 @@ def test_update_missing_table(src_db, tgt_db, called):
     with pytest.raises(ReplisomeError):
         c.get()
 
-    jr.stop()
+    src_db.remove_thread(jr_thread)
 
     tcur.execute("alter table testins rename to testins2")
 
-    jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    # FIXME ... it's replayed when the receiver is recreated, which fails
+    src_db.run_receiver(jr, src_db.dsn)
     c.get()
 
     tcur.execute("select * from testins2")
@@ -320,8 +323,10 @@ def test_update_missing_col(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn)
     c = called(du, 'process_message')
 
-    jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    jr = JsonReceiver(slot=src_db.slot,
+                      message_cb=du.process_message,
+                      flush_interval=0)
+    jr_thread = src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -337,6 +342,7 @@ def test_update_missing_col(src_db, tgt_db, called):
             data text)
         """)
 
+    # FIXME: these statements should be processed and removed from WAL but...
     scur.execute("insert into testup (data) values ('hello')")
     scur.execute("insert into testup (data) values ('world')")
 
@@ -353,12 +359,12 @@ def test_update_missing_col(src_db, tgt_db, called):
     rs = tcur.fetchall()
     assert rs == [(1, 'hello'), (2, 'world')]
 
-    jr.stop()
+    src_db.remove_thread(jr_thread)
 
     tcur.execute("alter table testup add more text")
 
-    jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    # FIXME ... they're replayed when the receiver is recreated, which fails
+    src_db.run_receiver(jr, src_db.dsn)
     c.get()
 
     tcur.execute("select id, data, more from testup order by id")
@@ -368,11 +374,11 @@ def test_update_missing_col(src_db, tgt_db, called):
 
 def test_delete(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn, skip_missing_columns=True,
-                    skip_missing_tables=True)
+                     skip_missing_tables=True)
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -417,8 +423,10 @@ def test_delete_missing_table(src_db, tgt_db, called):
     du = DataUpdater(tgt_db.conn.dsn, skip_missing_columns=True)
     c = called(du, 'process_message')
 
-    jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    jr = JsonReceiver(slot=src_db.slot,
+                      message_cb=du.process_message,
+                      flush_interval=0)
+    jr_thread = src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -432,6 +440,7 @@ def test_delete_missing_table(src_db, tgt_db, called):
     tcur.execute("drop table if exists testins2")
     tcur.execute("create table testins (id serial primary key, data text)")
 
+    # FIXME: this statement should be processed and removed from WAL but...
     scur.execute("insert into testins (data) values ('hello'), ('world')")
     c.get()
 
@@ -441,12 +450,12 @@ def test_delete_missing_table(src_db, tgt_db, called):
     with pytest.raises(ReplisomeError):
         c.get()
 
-    jr.stop()
+    src_db.remove_thread(jr_thread)
 
     tcur.execute("alter table testins rename to testins2")
 
-    jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    # FIXME ... it's replayed when the receiver is recreated, which fails
+    src_db.run_receiver(jr, src_db.dsn)
     c.get()
 
     tcur.execute("select * from testins2")
@@ -458,7 +467,7 @@ def test_toast(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()
@@ -539,7 +548,7 @@ def test_numeric(src_db, tgt_db, called):
     c = called(du, 'process_message')
 
     jr = JsonReceiver(slot=src_db.slot, message_cb=du.process_message)
-    src_db.thread_receive(jr, src_db.dsn)
+    src_db.run_receiver(jr, src_db.dsn)
 
     scur = src_db.conn.cursor()
     tcur = tgt_db.conn.cursor()

@@ -1,12 +1,13 @@
+import time
 import os
-import random
+import logging
+from datetime import datetime, timedelta
 from threading import Thread
 
 import pytest
 import psycopg2
-from psycopg2.extras import LogicalReplicationConnection, wait_select
 
-from replisome.errors import ReplisomeError
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
@@ -15,15 +16,13 @@ def src_db():
     dsn = os.environ.get(
         "RS_TEST_SRC_DSN",
         'host=localhost dbname=rs_src_test')
-    db = TestDatabase(dsn)
-    db.drop_slot()
-    db.create_slot(if_not_exists=True)
+    db = TestDatabase(dsn, slot='rs_test_slot')
 
     # Create the extension to make the version number available
-    cnn = db.make_conn()
-    cur = cnn.cursor()
-    cur.execute('drop extension if exists replisome')
-    cur.execute('create extension replisome')
+    with db.make_conn() as cnn:
+        cur = cnn.cursor()
+        cur.execute('drop extension if exists replisome')
+        cur.execute('create extension replisome')
     cnn.close()
 
     yield db
@@ -48,17 +47,16 @@ class TestDatabase(object):
     The database can be the sender of the receiver: a few methods may make
     sense only in one case.
 
-    The object manages one replication slot.
+    The object optionally manages teardown for one replication slot.
     """
-    def __init__(self, dsn):
+    def __init__(self, dsn, slot=None):
         self.dsn = dsn
-        self.slot = 'rs_test_' + str(random.randint(0, 1234567890))
+        self.slot = slot
         self.plugin = 'replisome'
 
-        self._repl_conn = self._conn = None
+        self._conn = None
         self._conns = []
         self._threads = []
-        self._slot_created = False
 
     @property
     def conn(self):
@@ -71,17 +69,6 @@ class TestDatabase(object):
             self._conn = self.make_conn()
         return self._conn
 
-    @property
-    def repl_conn(self):
-        """
-        A replication connection to the database.
-
-        The object is always the same for the object lifetime.
-        """
-        if not self._repl_conn:
-            self._repl_conn = self.make_repl_conn()
-        return self._repl_conn
-
     def teardown(self):
         """
         Close the database connections and stop any receiving thread.
@@ -89,13 +76,15 @@ class TestDatabase(object):
         Invoked at the end of the tests.
         """
         for thread in self._threads:
-            thread.stop()
-            thread.join()
+            if thread is not None:
+                thread.stop()
+                thread.join()
 
         for cnn in self._conns:
             cnn.close()
 
-        if self._slot_created:
+        if self.slot:
+            logger.debug('Dropping replication slot')
             self.drop_slot()
 
     def make_conn(self, autocommit=True, **kwargs):
@@ -105,18 +94,6 @@ class TestDatabase(object):
         """
         cnn = psycopg2.connect(self.dsn, **kwargs)
         cnn.autocommit = autocommit
-        self._conns.append(cnn)
-        return cnn
-
-    def make_repl_conn(self, **kwargs):
-        """Create a new replication connection to the test database.
-
-        The connection is asynchronous, and will be closed on teardown().
-        """
-        cnn = psycopg2.connect(
-            self.dsn, connection_factory=LogicalReplicationConnection,
-            async_=True, **kwargs)
-        wait_select(cnn)
         self._conns.append(cnn)
         return cnn
 
@@ -134,48 +111,38 @@ class TestDatabase(object):
         # other connections (maybe using the slot) have been closed.
         cnn.close()
 
-    def create_slot(self, if_not_exists=False):
-        """Create the replication slot.
-
-        :param if_not_exists:
-            If True and the slot exists don't do anything.
-            If False create the slot (if it exists, die of error)
+    def run_receiver(self, receiver, dsn):
         """
-        with self.make_conn() as cnn:
-            cur = cnn.cursor()
-            if if_not_exists:
-                cur.execute("""
-                    select 1 from pg_replication_slots where slot_name = %s
-                    """, (self.slot,))
-                if cur.fetchone():
-                    return
-
-            cur.execute(
-                "select pg_create_logical_replication_slot(%s, %s)",
-                [self.slot, self.plugin])
-
-            self._slot_created = True
-
-    def thread_receive(self, receiver, dsn, target=None):
-        """
-        Run the receiver loop of a receiver in a thread.
+        Run a receiver loop in a thread.
 
         Stop the receiver at the end of the test.
         """
-        def thread_receive_(cur_dsn):
-            try:
-                receiver.dsn = cur_dsn
-                receiver.start()
-            except ReplisomeError:
-                pass
-        if target is None:
-            target = thread_receive_
+        receiver.dsn = dsn
+        return self.add_thread(receiver)
 
-        self.thread_run(target, receiver.stop, args=(dsn,))
+    def run_pipeline(self, pipeline):
+        """
+        Runs the given pipeline in a thread. Stops pipeline at end of the test.
 
-    def thread_run(self, target, at_exit, args=()):
-        """Call a function in a thread. Call another function on stop."""
-        t = Thread(target=target, args=args)
-        t.stop = at_exit
-        t.start()
-        self._threads.append(t)
+        :param: pipeline
+        """
+        return self.add_thread(pipeline)
+
+    def add_thread(self, obj, timeout=timedelta(seconds=1)):
+        thread = Thread(target=obj.start)
+        thread.stop = obj.stop
+        thread.start()
+        start_time = datetime.utcnow()
+        while not obj.is_running:
+            if (start_time + timeout) < datetime.utcnow():
+                raise TimeoutError()
+            time.sleep(0.01)
+        self._threads.append(thread)
+        return len(self._threads) - 1
+
+    def remove_thread(self, thread_index):
+        thread = self._threads[thread_index]
+        thread.stop()
+        thread.join()
+        self._threads[thread_index] = None
+

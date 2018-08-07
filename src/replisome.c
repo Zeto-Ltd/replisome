@@ -769,7 +769,11 @@ rs_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		econtext = prepare_per_tuple_econtext(entry->estate, tupdesc);
 		ExecStoreTuple(newtup ? newtup : oldtup, econtext->ecxt_scantuple,
 			InvalidBuffer, false);
+#if PG_VERSION_NUM >= 100000
+		res = ExecEvalExpr(entry->exprstate, econtext, &isnull);
+#else
 		res = ExecEvalExpr(entry->exprstate, econtext, &isnull, NULL);
+#endif
 		ExecDropSingleTupleTableSlot(econtext->ecxt_scantuple);
 
 		/* NULL is same as false for our use. */
