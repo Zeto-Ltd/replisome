@@ -239,7 +239,7 @@ WHERE slot_name = %s
         with psycopg2.connect(self.dsn) as conn, conn.cursor() as cursor:
             cursor.execute(command, [self.slot])
             result = cursor.fetchone()
-        return result is None or result[0] == 't'
+        return result is not None and result[0]
 
     def drop_slot(self):
         self.logger.info('dropping replication slot "%s"', self.slot)
