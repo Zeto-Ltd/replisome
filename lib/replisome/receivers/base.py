@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timedelta
 from select import select
 import logging
@@ -76,9 +77,11 @@ class BaseReceiver(object):
         if self.flush_delta is not None:
             self.next_wait_time = datetime.utcnow() + self.flush_delta
 
-    def start(self, lsn=None):
+    def start(self, lsn=None, **kwargs):
         if not self.slot:
             raise AttributeError('no slot specified')
+        if 'block' in kwargs:
+            self.is_blocking = kwargs['block']
 
         self.create_slot()
         if lsn is None:
@@ -224,6 +227,20 @@ FROM new_slots
         except psycopg2.Error as e:
             self.logger.error('error creating replication slot: %s', e)
 
+    def is_slot_active(self):
+        """
+        Is the configured replication slot active?
+        """
+        command = '''
+SELECT active
+FROM pg_replication_slots
+WHERE slot_name = %s
+'''
+        with psycopg2.connect(self.dsn) as conn, conn.cursor() as cursor:
+            cursor.execute(command, [self.slot])
+            result = cursor.fetchone()
+        return result is not None and result[0]
+
     def drop_slot(self):
         self.logger.info('dropping replication slot "%s"', self.slot)
         command = '''
@@ -231,8 +248,29 @@ SELECT pg_drop_replication_slot(slot_name)
 FROM pg_replication_slots
 WHERE slot_name = %s
 '''
+        dropped = False
         try:
             with psycopg2.connect(self.dsn) as conn, conn.cursor() as cursor:
                 cursor.execute(command, [self.slot])
+            dropped = True
         except Exception as e:
             self.logger.error('error dropping replication slot: %s', e)
+        return dropped
+
+    def destroy(self, timeout=2.0):
+        """
+        Attempts to destroy the receiver by closing the DB connection and
+        dropping the replication slot once it's become inactive.
+
+        :param timeout: maximum time to wait for the slot to become inactive
+        :return: True if slot was destroyed, False otherwise.
+        """
+        self.close()
+        destroy_time = datetime.utcnow()
+        # NB: there is a delay between the connection closing and the
+        # replication slot becoming inactive and thus ready for deletion
+        wait_time = timedelta(seconds=timeout)
+        while self.is_slot_active() and \
+                destroy_time + wait_time > datetime.utcnow():
+            time.sleep(0.1)
+        return self.drop_slot()
