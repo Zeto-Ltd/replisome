@@ -26,7 +26,7 @@ class BaseReceiver(object):
         self.cursor = None
         self.is_running = False
         self.is_blocking = block
-        self._shutdown_pipe = os.pipe()
+        self._shutdown_pipe = None
         self.next_wait_time = None
         self.blocking_wait = block_wait
         self.flush_delta = None
@@ -51,7 +51,8 @@ class BaseReceiver(object):
         self.stop()
 
     def stop(self):
-        os.write(self._shutdown_pipe[1], b'stop')
+        if self._shutdown_pipe:
+            os.write(self._shutdown_pipe[1], b'stop')
 
     def close(self):
         self.logger.info('Closing DB connection for %s',
@@ -72,6 +73,10 @@ class BaseReceiver(object):
             except Exception:
                 self.logger.exception('Failed to close connection')
             self.connection = None
+        if self._shutdown_pipe:
+            os.close(self._shutdown_pipe[0])
+            os.close(self._shutdown_pipe[1])
+            self._shutdown_pipe = None
 
     def update_status_time(self):
         if self.flush_delta is not None:
@@ -96,6 +101,8 @@ class BaseReceiver(object):
 
         self.flush_lsn = 0
         self.update_status_time()
+
+        self._shutdown_pipe = os.pipe()
         if self.is_blocking:
             self.logger.debug('Listening to replication slot %s', self.slot)
             self.is_running = True
