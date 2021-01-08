@@ -23,6 +23,7 @@ Programming Language :: Python :: 2
 Programming Language :: Python :: 2.7
 Programming Language :: Python :: 3
 Programming Language :: Python :: 3.5
+Programming Language :: Python :: 3.8
 Topic :: Database
 """
 
@@ -72,9 +73,9 @@ setup(
     keywords=['database', 'replication', 'PostgreSQL'],
     classifiers=[x for x in classifiers.strip().splitlines()],
     install_requires=[
-        'six==1.11.0',
-        'PyYAML==3.12',
-        'psycopg2-binary==2.7.4'
+        'six>=1.11.0',
+        'PyYAML==5.3',
+        'psycopg2-binary==2.8.6'
     ],
     tests_require=(parse_requirements(TEST_REQUIREMENTS_PATH)
                    if os.path.exists(TEST_REQUIREMENTS_PATH) else
