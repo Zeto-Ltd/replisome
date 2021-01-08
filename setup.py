@@ -73,7 +73,7 @@ setup(
     keywords=['database', 'replication', 'PostgreSQL'],
     classifiers=[x for x in classifiers.strip().splitlines()],
     install_requires=[
-        'six>=1.11.0',
+        'six==1.15.0',
         'PyYAML==5.3',
         'psycopg2-binary==2.8.6'
     ],
