@@ -1,4 +1,4 @@
 # This file can be used to install pytest and test the installed package
 # as opposite as running `python setup.py test` which will always test the
 # project source.
-pytest==3.4.2
+pytest==6.1.2
